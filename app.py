@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # 🔑 ضع مفتاحك السري هنا مباشرة لكي يعمل فوراً بدون مشاكل الرندر
 # امسح كلمة YOUR_API_KEY_HERE وضع مفتاحك الذي يبدأ بـ gsk_ داخل علامات التنصيص
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "YOUR_API_KEY_HERE")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # 🧠 عقل النظام (مخفي عن المستخدم، يفهم كل اللغات لكن لا يتكلم عنها)
