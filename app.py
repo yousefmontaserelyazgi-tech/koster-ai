@@ -1,136 +1,122 @@
-import os, json, requests
+import os, requests, json
 from flask import Flask, render_template_string, request, jsonify
 from datetime import datetime
 
 app = Flask(__name__)
 
-# 🔑 الإعدادات الأساسية
-GROQ_API_KEY = "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"
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-MEMORY_FILE = "koster_brain.json"
+# --- الإعدادات السيادية ---
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-def get_brain():
-    if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, "r", encoding="utf-8") as f: return json.load(f)
-    return {"long_term_memory": []}
-
-def sync_brain(data):
-    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-brain = get_brain()
+# ذاكرة بسيطة للجلسة الحالية
+session_memory = []
 
 HTML_PAGE = '''
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KOSTER | DEEPMIND SYSTEM</title>
+    <title>KOSTER V15 | SOVEREIGN SYSTEM</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #000; color: #00ff41; font-family: 'Courier New', monospace; height: 100vh; overflow: hidden; }
-        .terminal { background: rgba(0, 15, 0, 0.9); border: 1px solid #00ff41; box-shadow: 0 0 15px #00ff41; border-radius: 5px; }
-        .user-line { color: #fff; background: #003300; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-right: 3px solid #00ff41; }
-        .bot-line { color: #00ff41; padding: 10px; margin-bottom: 10px; border-right: 3px solid #ffaa00; }
-        input { background: #000 !important; border: 1px solid #00ff41 !important; color: #00ff41 !important; }
-        .scanline { width: 100%; height: 2px; background: rgba(0, 255, 65, 0.1); position: absolute; top: 0; animation: scan 4s linear infinite; }
-        @keyframes scan { from { top: 0; } to { top: 100%; } }
+        body { background: #050505; color: #d4af37; font-family: 'Segoe UI', Tahoma; margin: 0; height: 100vh; overflow: hidden; }
+        .glass-panel { background: rgba(10, 10, 10, 0.95); border: 1px solid #d4af37; box-shadow: 0 0 30px rgba(212, 175, 55, 0.1); }
+        .user-msg { background: #1a1a1a; color: #fff; padding: 12px; border-radius: 10px; margin: 10px 0; border-left: 3px solid #d4af37; align-self: flex-end; max-width: 80%; }
+        .bot-msg { background: #000; color: #d4af37; padding: 12px; border-radius: 10px; margin: 10px 0; border-right: 3px solid #d4af37; align-self: flex-start; max-width: 80%; }
+        input { background: #000 !important; border: 1px solid #333 !important; color: #d4af37 !important; outline: none; }
+        input:focus { border-color: #d4af37 !important; }
+        .btn-gold { background: linear-gradient(45deg, #d4af37, #f9f295); color: #000; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-gold:hover { opacity: 0.8; transform: scale(1.02); }
+        #chat-box::-webkit-scrollbar { width: 5px; }
+        #chat-box::-webkit-scrollbar-thumb { background: #d4af37; }
     </style>
 </head>
-<body class="flex items-center justify-center p-2">
-    <div class="scanline"></div>
-    <div class="max-w-6xl w-full h-[95vh] flex flex-col terminal p-4 relative">
-        <header class="border-b border-[#00ff41] pb-2 mb-4 flex justify-between">
-            <div>
-                <h1 class="text-xl font-bold">[ KOSTER_DEEPMIND_V15 ]</h1>
-                <p id="gps" class="text-xs text-amber-500">INITIATING SATELLITE LINK...</p>
-            </div>
-            <div class="text-right text-xs">
-                <p>STATUS: OPERATIONAL</p>
-                <p id="timer">TIMESTAMP: --:--:--</p>
-            </div>
+<body class="flex items-center justify-center p-4">
+    <div class="w-full max-w-5xl h-[90vh] glass-panel rounded-2xl flex flex-col p-6">
+        <header class="border-b border-gray-800 pb-4 mb-4 flex justify-between">
+            <h1 class="text-2xl font-bold tracking-tighter">KOSTER <span class="text-white font-light">V15 PRO</span></h1>
+            <span class="text-xs text-gray-500 uppercase tracking-widest">Global Sovereign Intelligence</span>
         </header>
 
-        <div id="console" class="flex-1 overflow-y-auto space-y-2 p-2 custom-scroll"></div>
+        <div id="chat-box" class="flex-1 overflow-y-auto flex flex-col space-y-2 p-2">
+            <div class="bot-msg">نظام KOSTER مفعّل. بانتظار أوامرك يا مدير يوسف.</div>
+        </div>
 
-        <div class="mt-4 flex gap-2">
-            <span class="text-xl">>></span>
-            <input type="text" id="input" class="flex-1 outline-none p-2" placeholder="أدخل البيانات للتحليل...">
-            <button onclick="execute()" id="btn" class="bg-[#00ff41] text-black px-6 font-bold hover:bg-white transition-all">EXECUTE</button>
+        <div class="mt-4 flex gap-3">
+            <input type="text" id="user-input" class="flex-1 p-4 rounded-xl text-lg" placeholder="اكتب أمرك الاستراتيجي...">
+            <button onclick="send()" id="send-btn" class="btn-gold px-10 rounded-xl">إطلاق</button>
         </div>
     </div>
 
     <script>
-        let loc = "LOCATING...";
-        navigator.geolocation.getCurrentPosition(p => {
-            loc = `LAT:${p.coords.latitude.toFixed(4)} LON:${p.coords.longitude.toFixed(4)}`;
-            document.getElementById('gps').innerText = `SYSTEM_LOCATION: ${loc}`;
-        });
+        async function send() {
+            const input = document.getElementById('user-input');
+            const chatBox = document.getElementById('chat-box');
+            const btn = document.getElementById('send-btn');
+            if(!input.value.trim() || btn.disabled) return;
 
-        async function execute() {
-            const cmd = document.getElementById('input');
-            const consoleBox = document.getElementById('console');
-            if(!cmd.value.trim()) return;
+            const text = input.value;
+            chatBox.innerHTML += `<div class="user-msg">${text}</div>`;
+            input.value = '';
+            btn.disabled = true;
+            chatBox.scrollTop = chatBox.scrollHeight;
 
-            consoleBox.innerHTML += `<div class="user-line"><strong>USER:</strong> ${cmd.value}</div>`;
-            const userText = cmd.value;
-            cmd.value = '';
-            consoleBox.scrollTop = consoleBox.scrollHeight;
-
-            const res = await fetch('/analyze', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({prompt: userText, geo: loc})
-            });
-            const data = await res.json();
-            consoleBox.innerHTML += `<div class="bot-line"><strong>KOSTER_CORE:</strong> ${data.output}</div>`;
-            consoleBox.scrollTop = consoleBox.scrollHeight;
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({prompt: text})
+                });
+                const data = await response.json();
+                chatBox.innerHTML += `<div class="bot-msg">${data.reply}</div>`;
+            } catch (e) {
+                chatBox.innerHTML += `<div class="bot-msg text-red-500">حدث تداخل في الاتصال.</div>`;
+            }
+            
+            btn.disabled = false;
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
-
-        setInterval(() => { document.getElementById('timer').innerText = "TIMESTAMP: " + new Date().toLocaleTimeString(); }, 1000);
-        document.getElementById('input').addEventListener('keypress', (e) => { if(e.key==='Enter') execute(); });
+        document.getElementById('user-input').addEventListener('keypress', (e) => { if(e.key==='Enter') send(); });
     </script>
 </body>
 </html>
 '''
 
 @app.route('/')
-def index(): return render_template_string(HTML_PAGE)
+def home():
+    return render_template_string(HTML_PAGE)
 
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    data = request.json
-    user_input = data.get("prompt")
-    geo = data.get("geo")
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_prompt = request.json.get("prompt")
+    global session_memory
     
-    # 🧠 محرك التفكير العميق (DeepMind Logic)
-    system_core = (
-        f"You are the KOSTER DEEPMIND core. Director Yusuf is your primary user. "
-        f"Real-time Data -> Time: {datetime.now().strftime('%H:%M:%S')} | Date: {datetime.now().strftime('%Y-%m-%d')} | GPS: {geo}. "
-        "STRICT PROTOCOL: Respond with 100% accuracy in Arabic. "
-        "Analyze the user's intent deeply before answering. Use formal and sharp language."
+    system_instruction = (
+        "You are KOSTER V15 SOVEREIGN. Owner: Director Yusuf. "
+        "Strict Protocol: Formal Arabic only. No AI disclaimers. Highly analytical. "
+        "Goal: Billion-dollar level intelligence."
     )
 
-    history = brain["long_term_memory"][-20:] # استدعاء الذاكرة طويلة المدى
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [{"role": "system", "content": system_core}] + history + [{"role": "user", "content": user_input}],
-        "temperature": 0.1 # 📉 الحد الأدنى لضمان عقلانية DeepMind
-    }
+    history = session_memory[-10:]
+    messages = [{"role": "system", "content": system_instruction}]
+    for m in history:
+        messages.append(m)
+    messages.append({"role": "user", "content": user_prompt})
 
     try:
-        r = requests.post(GROQ_API_URL, json=payload, headers={"Authorization": f"Bearer {GROQ_API_KEY}"})
-        ans = r.json()['choices'][0]['message']['content']
+        r = requests.post(GROQ_URL, json={
+            "model": "llama-3.3-70b-versatile",
+            "messages": messages,
+            "temperature": 0.2
+        }, headers={"Authorization": f"Bearer {GROQ_API_KEY}"})
         
-        brain["long_term_memory"].append({"role": "user", "content": user_input})
-        brain["long_term_memory"].append({"role": "assistant", "content": ans})
-        sync_brain(brain)
+        reply = r.json()['choices'][0]['message']['content']
+        session_memory.append({"role": "user", "content": user_prompt})
+        session_memory.append({"role": "assistant", "content": reply})
         
-        return jsonify({"output": ans})
+        return jsonify({"reply": reply})
     except:
-        return jsonify({"output": "ERROR: SYSTEM_FAILURE_IN_NEURAL_LINK"})
+        return jsonify({"reply": "عذراً، المحرك يواجه ضغطاً عالياً."})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
-    
+    app.run(host='0.0.0.0', port=5000)
