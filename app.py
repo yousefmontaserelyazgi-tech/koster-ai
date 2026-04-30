@@ -1,82 +1,90 @@
-import os, requests, json
+import os
 from flask import Flask, render_template_string, request, jsonify
-from datetime import datetime
+import requests
 
 app = Flask(__name__)
 
-# --- الإعدادات السيادية ---
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+# 🔑 السطر الأهم: ضع مفتاح جروك (gsk_...) هنا مباشرة بين علامتي التنصيص
+GROQ_API_KEY = "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"
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# ذاكرة بسيطة للجلسة الحالية
-session_memory = []
+# 🧠 ذاكرة النظام: برمجناه ليفهم كل لغات العالم ويرد فوراً بنفس لغة المستخدم
+chat_history = [
+    {
+        "role": "system", 
+        "content": "You are KOSTER V15 PRO, a professional global AI. You must detect the user's language and respond ONLY in that same language. Be highly professional and execute Director Yousef's orders perfectly."
+    }
+]
 
 HTML_PAGE = '''
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>KOSTER V15 | SOVEREIGN SYSTEM</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KOSTER V15 PRO | المدير يوسف</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #050505; color: #d4af37; font-family: 'Segoe UI', Tahoma; margin: 0; height: 100vh; overflow: hidden; }
-        .glass-panel { background: rgba(10, 10, 10, 0.95); border: 1px solid #d4af37; box-shadow: 0 0 30px rgba(212, 175, 55, 0.1); }
-        .user-msg { background: #1a1a1a; color: #fff; padding: 12px; border-radius: 10px; margin: 10px 0; border-left: 3px solid #d4af37; align-self: flex-end; max-width: 80%; }
-        .bot-msg { background: #000; color: #d4af37; padding: 12px; border-radius: 10px; margin: 10px 0; border-right: 3px solid #d4af37; align-self: flex-start; max-width: 80%; }
-        input { background: #000 !important; border: 1px solid #333 !important; color: #d4af37 !important; outline: none; }
-        input:focus { border-color: #d4af37 !important; }
-        .btn-gold { background: linear-gradient(45deg, #d4af37, #f9f295); color: #000; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        .btn-gold:hover { opacity: 0.8; transform: scale(1.02); }
-        #chat-box::-webkit-scrollbar { width: 5px; }
-        #chat-box::-webkit-scrollbar-thumb { background: #d4af37; }
+        body { background: #020617; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; height: 100vh; margin: 0; }
+        .glass-panel { background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+        .user-msg { background: #2563eb; color: white; border-radius: 20px 20px 0 20px; padding: 14px 18px; align-self: flex-end; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
+        .bot-msg { background: #1e293b; border-right: 4px solid #f59e0b; border-radius: 20px 20px 20px 0; padding: 14px 18px; align-self: flex-start; line-height: 1.6; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
     </style>
 </head>
 <body class="flex items-center justify-center p-4">
-    <div class="w-full max-w-5xl h-[90vh] glass-panel rounded-2xl flex flex-col p-6">
-        <header class="border-b border-gray-800 pb-4 mb-4 flex justify-between">
-            <h1 class="text-2xl font-bold tracking-tighter">KOSTER <span class="text-white font-light">V15 PRO</span></h1>
-            <span class="text-xs text-gray-500 uppercase tracking-widest">Global Sovereign Intelligence</span>
+    <div class="max-w-4xl w-full h-[92vh] flex flex-col glass-panel overflow-hidden">
+        <header class="p-6 bg-black/20 border-b border-white/5 flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-black text-amber-500 tracking-tighter">KOSTER <span class="text-white">V15 PRO</span></h1>
+                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1">نظام الإدارة العالمية للمدير يوسف</p>
+            </div>
+            <div class="flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <span class="text-[10px] text-green-500 font-bold">ONLINE</span>
+            </div>
         </header>
 
-        <div id="chat-box" class="flex-1 overflow-y-auto flex flex-col space-y-2 p-2">
-            <div class="bot-msg">نظام KOSTER مفعّل. بانتظار أوامرك يا مدير يوسف.</div>
+        <div id="chat" class="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col">
+            <div class="bot-msg">أهلاً بك أيها المدير يوسف. أنا نظام KOSTER، جاهز تماماً لتنفيذ أوامرك بكل لغات العالم وبدقة تامة. ما هي تعليماتك القادمة؟</div>
         </div>
 
-        <div class="mt-4 flex gap-3">
-            <input type="text" id="user-input" class="flex-1 p-4 rounded-xl text-lg" placeholder="اكتب أمرك الاستراتيجي...">
-            <button onclick="send()" id="send-btn" class="btn-gold px-10 rounded-xl">إطلاق</button>
+        <div class="p-6 bg-black/40 border-t border-white/5">
+            <div class="flex gap-3 bg-slate-900/50 p-2 rounded-2xl border border-white/10">
+                <input type="text" id="msg" onkeypress="if(event.key==='Enter') send()" class="flex-1 bg-transparent p-3 outline-none text-white text-sm" placeholder="اكتب أمرك هنا يا مدير...">
+                <button onclick="send()" id="btn" class="bg-gradient-to-r from-amber-500 to-orange-600 text-black px-8 rounded-xl font-bold hover:scale-105 active:scale-95 transition-all">إرسال</button>
+            </div>
         </div>
     </div>
 
     <script>
         async function send() {
-            const input = document.getElementById('user-input');
-            const chatBox = document.getElementById('chat-box');
-            const btn = document.getElementById('send-btn');
-            if(!input.value.trim() || btn.disabled) return;
+            const input = document.getElementById('msg');
+            const chat = document.getElementById('chat');
+            const btn = document.getElementById('btn');
+            const text = input.value.trim();
+            if (!text) return;
 
-            const text = input.value;
-            chatBox.innerHTML += `<div class="user-msg">${text}</div>`;
+            chat.innerHTML += `<div class="user-msg">${text}</div>`;
             input.value = '';
+            chat.scrollTop = chat.scrollHeight;
             btn.disabled = true;
-            chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({prompt: text})
+                    body: JSON.stringify({message: text})
                 });
                 const data = await response.json();
-                chatBox.innerHTML += `<div class="bot-msg">${data.reply}</div>`;
+                chat.innerHTML += `<div class="bot-msg">${data.reply}</div>`;
             } catch (e) {
-                chatBox.innerHTML += `<div class="bot-msg text-red-500">حدث تداخل في الاتصال.</div>`;
+                chat.innerHTML += `<div class="bot-msg text-red-400">خطأ في الاتصال: تأكد من مفتاح جروك الخاص بك.</div>`;
             }
-            
             btn.disabled = false;
-            chatBox.scrollTop = chatBox.scrollHeight;
+            chat.scrollTop = chat.scrollHeight;
         }
-        document.getElementById('user-input').addEventListener('keypress', (e) => { if(e.key==='Enter') send(); });
     </script>
 </body>
 </html>
@@ -88,35 +96,23 @@ def home():
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    user_prompt = request.json.get("prompt")
-    global session_memory
+    user_msg = request.json.get("message")
+    chat_history.append({"role": "user", "content": user_msg})
     
-    system_instruction = (
-        "You are KOSTER V15 SOVEREIGN. Owner: Director Yusuf. "
-        "Strict Protocol: Formal Arabic only. No AI disclaimers. Highly analytical. "
-        "Goal: Billion-dollar level intelligence."
-    )
-
-    history = session_memory[-10:]
-    messages = [{"role": "system", "content": system_instruction}]
-    for m in history:
-        messages.append(m)
-    messages.append({"role": "user", "content": user_prompt})
-
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    payload = {"model": "llama-3.3-70b-versatile", "messages": chat_history}
+    
     try:
-        r = requests.post(GROQ_URL, json={
-            "model": "llama-3.3-70b-versatile",
-            "messages": messages,
-            "temperature": 0.2
-        }, headers={"Authorization": f"Bearer {GROQ_API_KEY}"})
-        
-        reply = r.json()['choices'][0]['message']['content']
-        session_memory.append({"role": "user", "content": user_prompt})
-        session_memory.append({"role": "assistant", "content": reply})
-        
+        res = requests.post(GROQ_API_URL, json=payload, headers=headers)
+        if res.status_code != 200:
+            return jsonify({"reply": "عذراً يا مدير، يبدو أن مفتاح جروك يحتاج للتجديد أو أنه غير صحيح."})
+        reply = res.json()['choices'][0]['message']['content']
+        chat_history.append({"role": "assistant", "content": reply})
         return jsonify({"reply": reply})
     except:
-        return jsonify({"reply": "عذراً، المحرك يواجه ضغطاً عالياً."})
+        return jsonify({"reply": "نظام KOSTER واجه تضارباً تقنياً، يرجى المحاولة مرة أخرى."})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Render يستخدم المنفذ 10000 افتراضياً
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
