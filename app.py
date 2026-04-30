@@ -1,26 +1,24 @@
-import os
+import os, json, requests
 from flask import Flask, render_template_string, request, jsonify
-import requests
+from datetime import datetime
 
 app = Flask(__name__)
 
-# 🔑 تأكد من وضع مفتاحك هنا
+# 🔑 الإعدادات الأساسية
 GROQ_API_KEY = "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"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+MEMORY_FILE = "koster_elite_brain.json"
 
-# 🧠 ذاكرة حديدية + تعليمات صارمة جداً
-chat_history = [
-    {
-        "role": "system", 
-        "content": (
-            "You are KOSTER V15 PRO, a super-intelligent and rational AI. "
-            "STRICT INSTRUCTION: Speak ONLY in the language used by the user. "
-            "If the user speaks Arabic, every single character you write must be Arabic. "
-            "DO NOT mix English words like 'Hamd' or 'Smart' within Arabic sentences. "
-            "Be precise, logical, and maintain a professional tone."
-        )
-    }
-]
+def get_memory():
+    if os.path.exists(MEMORY_FILE):
+        with open(MEMORY_FILE, "r", encoding="utf-8") as f: return json.load(f)
+    return {"data": []}
+
+def save_memory(data):
+    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+memory = get_memory()
 
 HTML_PAGE = '''
 <!DOCTYPE html>
@@ -28,93 +26,106 @@ HTML_PAGE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KOSTER V15 PRO | النمط العقلاني</title>
+    <title>KOSTER V15 | GLOBAL ELITE</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #020617; color: white; font-family: 'Segoe UI', sans-serif; height: 100vh; margin: 0; overflow: hidden; }
-        .glass { background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; }
-        .user-msg { background: #1d4ed8; padding: 12px; border-radius: 15px 15px 0 15px; align-self: flex-end; max-width: 80%; }
-        .bot-msg { background: #1e293b; border-right: 4px solid #f59e0b; padding: 12px; border-radius: 15px 15px 15px 0; align-self: flex-start; max-width: 80%; }
-        .custom-scroll::-webkit-scrollbar { width: 5px; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        body { background: #050505; color: #d4af37; font-family: 'Times New Roman', serif; height: 100vh; overflow: hidden; }
+        .gold-border { border: 1px solid #d4af37; box-shadow: 0 0 30px rgba(212, 175, 55, 0.1); }
+        .user-bubble { background: #1a1a1a; color: #fff; padding: 15px; border-radius: 10px; border-left: 3px solid #d4af37; margin-bottom: 15px; width: fit-content; max-width: 80%; align-self: flex-end; }
+        .bot-bubble { background: #000; color: #d4af37; padding: 15px; border-radius: 10px; border-right: 3px solid #d4af37; margin-bottom: 15px; width: fit-content; max-width: 80%; align-self: flex-start; font-size: 1.1rem; }
+        .luxury-btn { background: linear-gradient(45deg, #d4af37, #f9f295, #d4af37); color: #000; font-weight: 900; transition: 0.3s; }
+        .luxury-btn:hover { transform: scale(1.05); filter: brightness(1.2); }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #d4af37; }
     </style>
 </head>
 <body class="flex items-center justify-center p-4">
-    <div class="max-w-4xl w-full h-[92vh] flex flex-col glass p-6 shadow-2xl">
-        <header class="pb-4 border-b border-white/10 mb-4 flex justify-between items-center">
-            <h1 class="text-2xl font-bold text-amber-500">KOSTER V15 PRO</h1>
-            <span class="text-green-500 font-mono text-sm">● MODE: RATIONAL_MEMORY</span>
+    <div class="max-w-6xl w-full h-[92vh] flex flex-col gold-border bg-[#0a0a0a] p-8 rounded-sm relative">
+        <header class="border-b border-gray-800 pb-6 mb-6 flex justify-between items-baseline">
+            <div>
+                <h1 class="text-3xl font-serif tracking-[0.2em] text-[#d4af37]">KOSTER V15 PRO</h1>
+                <p class="text-[10px] uppercase tracking-widest text-gray-500">Global Strategic Intelligence System</p>
+            </div>
+            <div class="text-right font-mono text-xs text-gray-600">
+                <p id="date">--/--/--</p>
+                <p class="text-[#d4af37]">ACCESS: LEVEL 10 (DIRECTOR YUSUF)</p>
+            </div>
         </header>
-        
-        <div id="chat" class="flex-1 overflow-y-auto space-y-4 flex flex-col pr-4 custom-scroll">
-            <div class="bot-msg">نظام KOSTER في خدمتكم يا مدير يوسف. تم تفعيل وحدة المنطق والذاكرة المستمرة. كيف أساعدك؟</div>
+
+        <div id="display" class="flex-1 overflow-y-auto flex flex-col space-y-4 pr-4">
+            <div class="bot-bubble">نظام KOSTER مفعّل بالكامل. في انتظار توجيهاتك الاستراتيجية يا مدير يوسف.</div>
         </div>
 
-        <div class="mt-4 flex gap-3 bg-slate-900 p-3 rounded-2xl border border-white/10">
-            <input type="text" id="msg" class="flex-1 bg-transparent outline-none text-white" placeholder="أمرك مطاع...">
-            <button onclick="send()" id="btn" class="bg-amber-500 hover:bg-amber-400 text-black px-8 py-2 rounded-xl font-bold transition-all">إرسال</button>
+        <div class="mt-8 flex gap-4">
+            <input type="text" id="query" class="flex-1 bg-transparent border-b border-gray-700 outline-none p-2 text-white text-lg placeholder-gray-800" placeholder="اكتب أمرك التنفيذي هنا...">
+            <button onclick="execute()" id="btn" class="luxury-btn px-12 py-3 uppercase text-sm tracking-widest">إرسال</button>
         </div>
     </div>
 
     <script>
-        async function send() {
-            const input = document.getElementById('msg');
-            const chat = document.getElementById('chat');
+        async function execute() {
+            const input = document.getElementById('query');
+            const display = document.getElementById('display');
             const btn = document.getElementById('btn');
-            if (!input.value.trim() || btn.disabled) return;
+            if(!input.value.trim() || btn.disabled) return;
 
-            const text = input.value;
-            chat.innerHTML += `<div class="user-msg">${text}</div>`;
+            const val = input.value;
+            display.innerHTML += `<div class="user-bubble">${val}</div>`;
             input.value = '';
             btn.disabled = true;
-            chat.scrollTop = chat.scrollHeight;
+            display.scrollTop = display.scrollHeight;
 
-            try {
-                const response = await fetch('/chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: text})
-                });
-                const data = await response.json();
-                chat.innerHTML += `<div class="bot-msg">${data.reply}</div>`;
-            } catch (e) {
-                chat.innerHTML += `<div class="bot-msg text-red-400">خطأ فني في الربط.</div>`;
-            }
+            const response = await fetch('/process', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({prompt: val})
+            });
+            const data = await response.json();
+            display.innerHTML += `<div class="bot-bubble">${data.result}</div>`;
             btn.disabled = false;
-            chat.scrollTop = chat.scrollHeight;
+            display.scrollTop = display.scrollHeight;
         }
-        document.getElementById('msg').addEventListener('keypress', (e) => { if(e.key==='Enter') send(); });
+
+        document.getElementById('date').innerText = new Date().toLocaleDateString('en-GB');
+        document.getElementById('query').addEventListener('keypress', (e) => { if(e.key==='Enter') execute(); });
     </script>
 </body>
 </html>
 '''
 
 @app.route('/')
-def home():
-    return render_template_string(HTML_PAGE)
+def main(): return render_template_string(HTML_PAGE)
 
-@app.route('/chat', methods=['POST'])
-def chat():
-    user_msg = request.json.get("message")
-    chat_history.append({"role": "user", "content": user_msg})
+@app.route('/process', methods=['POST'])
+def process():
+    user_query = request.json.get("prompt")
     
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-    
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": chat_history,
-        "temperature": 0.3,  # 📉 تم خفضها جداً ليكون عقلانياً ولا يخلط اللغات
-        "top_p": 0.85,       # تقليل العشوائية في اختيار الكلمات
-        "max_tokens": 1200
-    }
+    # 🏦 بروتوكول النخبة
+    elite_prompt = (
+        "You are the KOSTER V15 PRO Global Intelligence. "
+        "User: Director Yusuf (The Owner). "
+        "Tone: Highly sophisticated, professional, and world-class. "
+        "STRICT PROTOCOL: Respond only in formal Arabic. No casual talk. No mixed languages. "
+        "Provide insights worthy of a billion-dollar company. Be brief but extremely powerful."
+    )
+
+    history = memory["data"][-15:]
     
     try:
-        res = requests.post(GROQ_API_URL, json=payload, headers=headers)
-        reply = res.json()['choices'][0]['message']['content']
-        chat_history.append({"role": "assistant", "content": reply})
-        return jsonify({"reply": reply})
+        r = requests.post(GROQ_API_URL, json={
+            "model": "llama-3.3-70b-versatile",
+            "messages": [{"role": "system", "content": elite_prompt}] + history + [{"role": "user", "content": user_query}],
+            "temperature": 0.1
+        }, headers={"Authorization": f"Bearer {GROQ_API_KEY}"})
+        
+        output = r.json()['choices'][0]['message']['content']
+        memory["data"].append({"role": "user", "content": user_query})
+        memory["data"].append({"role": "assistant", "content": output})
+        save_memory(memory)
+        
+        return jsonify({"result": output})
     except:
-        return jsonify({"reply": "عذراً، حدث تداخل في البيانات. يرجى المحاولة مرة أخرى."})
+        return jsonify({"result": "عذراً، حدث خطأ في النظام السيادي."})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
