@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 # 🔑 جلب المفاتيح من Environment Variables
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-MONGO_URI = os.getenv("MONGO_URI") # سأخبرك كيف تحصل عليه الآن
+MONGO_URI = os.getenv("MONGO_URI") 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # --- إعداد الذاكرة الأزلية (MongoDB) ---
@@ -41,11 +41,12 @@ def get_supreme_logic():
         [DIRECTOR: YUSUF]
         [TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}]
         [CAPABILITIES: World Expert in Investment, Strategy, and Science.]
+        [CRITICAL LANGUAGE PROTOCOL: YOU MUST RESPOND STRICTLY AND EXCLUSIVELY IN ARABIC. DO NOT USE ENGLISH WORDS. DO NOT USE CHINESE, RUSSIAN, OR ANY OTHER LANGUAGE CHARACTERS. YOUR OUTPUT MUST BE 100% NATIVE, PROFESSIONAL ARABIC.]
         [CORE RULE: You never forget. You learn from Yusuf's previous messages saved in your memory bank.]
         """
     }
 
-# (واجهة HTML الفخمة تبقى كما هي)
+# (ضع كود واجهة HTML الفخمة هنا كما هي دون تغيير)
 HTML_PAGE = ''' ... كود الواجهة الذهبية ... '''
 
 @app.route('/')
@@ -62,14 +63,15 @@ def chat():
     # 2. تحميل التاريخ الكامل (الأزلي)
     full_history = load_eternal_memory()
     
-    # 3. إعداد السياق (نأخذ آخر 40 رسالة للـ API لضمان السرعة مع وجود المنطق)
+    # 3. إعداد السياق (نأخذ آخر 40 رسالة)
     context = [get_supreme_logic()] + full_history[-40:]
     
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": "llama-3.3-70b-versatile",
         "messages": context,
-        "temperature": 0.1
+        "temperature": 0.1,
+        "presence_penalty": 0.5 # يمنع تكرار الكلمات الغريبة
     }
     
     try:
@@ -80,8 +82,8 @@ def chat():
         save_to_eternal_memory("assistant", reply)
         
         return jsonify({"reply": reply})
-    except:
-        return jsonify({"reply": "خطأ في مزامنة الذاكرة الأزلية."})
+    except Exception as e:
+        return jsonify({"reply": "نظام KOSTER واجه مشكلة في الاتصال بالمزود."})
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
