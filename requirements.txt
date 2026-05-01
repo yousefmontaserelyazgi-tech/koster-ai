@@ -1,5 +1,3 @@
-Flask
-requests
-gunicorn
+flask
+groq
 pymongo
-dnspython
